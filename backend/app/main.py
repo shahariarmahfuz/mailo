@@ -50,6 +50,7 @@ app.add_middleware(
 # Root health check
 @app.get("/")
 @app.get("/health")
+@app.get("/api/health")
 async def health_check():
     return {
         "status": "ok",
