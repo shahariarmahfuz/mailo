@@ -29,6 +29,7 @@ export interface EmailSummary {
   is_starred: boolean;
   size_bytes: number;
   has_attachments: boolean;
+  preview?: string;
 }
 
 export interface Attachment {

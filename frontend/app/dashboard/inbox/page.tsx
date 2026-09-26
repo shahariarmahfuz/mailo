@@ -1,23 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
-  Inbox as InboxIcon,
   Star,
-  Mail,
-  MailOpen,
-  Filter,
   Search,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
-  Paperclip,
-  CheckCircle,
-  X,
-  Clock,
-  User,
   ArrowLeft,
   Trash2,
+  Inbox as InboxIcon,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { EmailSummary, EmailDetail, Mailbox } from "@/types";
@@ -26,6 +20,8 @@ export default function InboxPage() {
   const [emails, setEmails] = useState<EmailSummary[]>([]);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [selectedMailboxId, setSelectedMailboxId] = useState<string>("");
+  const [mailboxDropdownOpen, setMailboxDropdownOpen] = useState<boolean>(false);
+
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
   const [starredOnly, setStarredOnly] = useState<boolean>(false);
   const [search, setSearch] = useState<string>("");
@@ -80,7 +76,14 @@ export default function InboxPage() {
     loadEmails();
   }, [loadEmails]);
 
-  // Open Email Detail
+  // Selected mailbox label
+  const currentMailboxLabel = useMemo(() => {
+    if (!selectedMailboxId) return "All Mailboxes";
+    const found = mailboxes.find((m) => m.id === selectedMailboxId);
+    return found ? found.address : "All Mailboxes";
+  }, [selectedMailboxId, mailboxes]);
+
+  // Open Email Detail (lazy load body)
   async function handleOpenEmail(emailId: string) {
     setSelectedEmailId(emailId);
     setDetailLoading(true);
@@ -88,7 +91,7 @@ export default function InboxPage() {
       const detail = await api.getEmailDetail(emailId);
       setEmailDetail(detail);
       setDetailTab(detail.html_body ? "html" : "text");
-      // Update local read state in list
+      // Mark as read in local state
       setEmails((prev) =>
         prev.map((e) => (e.id === emailId ? { ...e, is_read: true } : e))
       );
@@ -103,7 +106,6 @@ export default function InboxPage() {
   async function handleToggleStar(e: React.MouseEvent, emailId: string, currentStarred: boolean) {
     e.stopPropagation();
     const newStatus = !currentStarred;
-    // optimistic update
     setEmails((prev) =>
       prev.map((item) => (item.id === emailId ? { ...item, is_starred: newStatus } : item))
     );
@@ -113,35 +115,15 @@ export default function InboxPage() {
     try {
       await api.updateEmailStatus(emailId, { is_starred: newStatus });
     } catch {
-      // rollback
       setEmails((prev) =>
         prev.map((item) => (item.id === emailId ? { ...item, is_starred: currentStarred } : item))
       );
     }
   }
 
-  // Toggle Read
-  async function handleToggleRead(e: React.MouseEvent, emailId: string, currentRead: boolean) {
-    e.stopPropagation();
-    const newStatus = !currentRead;
-    setEmails((prev) =>
-      prev.map((item) => (item.id === emailId ? { ...item, is_read: newStatus } : item))
-    );
-    if (emailDetail && emailDetail.id === emailId) {
-      setEmailDetail({ ...emailDetail, is_read: newStatus });
-    }
-    try {
-      await api.updateEmailStatus(emailId, { is_read: newStatus });
-    } catch {
-      setEmails((prev) =>
-        prev.map((item) => (item.id === emailId ? { ...item, is_read: currentRead } : item))
-      );
-    }
-  }
-
   // Delete Email
   async function handleDeleteEmail(emailId: string) {
-    if (!confirm("Are you sure you want to delete this email?")) return;
+    if (!confirm("Delete this email?")) return;
     try {
       await api.deleteEmail(emailId);
       setEmails((prev) => prev.filter((e) => e.id !== emailId));
@@ -149,374 +131,384 @@ export default function InboxPage() {
         setSelectedEmailId(null);
         setEmailDetail(null);
       }
-    } catch (err) {
-      alert("Failed to delete email");
+    } catch {
+      alert("Failed to delete email.");
     }
   }
 
-  // Format Date cleanly
-  function formatDate(isoStr: string) {
+  // Clean compact date formatting
+  function formatReceivedDate(isoStr: string) {
     const d = new Date(isoStr);
     const now = new Date();
     const diffHours = (now.getTime() - d.getTime()) / (1000 * 60 * 60);
 
-    if (diffHours < 24) {
-      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (diffHours < 24 && d.getDate() === now.getDate()) {
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     }
-    if (diffHours < 168) {
-      return d.toLocaleDateString([], { weekday: "short" });
+    if (d.getFullYear() === now.getFullYear()) {
+      return d.toLocaleDateString([], { month: "short", day: "numeric" });
     }
-    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    return d.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" });
+  }
+
+  // Extract clean sender name
+  function cleanSenderName(sender: string) {
+    if (!sender) return "Unknown";
+    const match = sender.match(/^([^<]+)/);
+    if (match && match[1].trim()) {
+      return match[1].replace(/["']/g, "").trim();
+    }
+    return sender;
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-slate-950">
-      {/* Top Controls Bar */}
-      <div className="border-b border-slate-800/80 bg-slate-900/60 p-4 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Mailbox Switcher Dropdown */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider shrink-0">
-              Mailbox:
-            </span>
-            <select
-              value={selectedMailboxId}
-              onChange={(e) => {
-                setSelectedMailboxId(e.target.value);
-                setPage(1);
-              }}
-              className="bg-slate-950 border border-slate-800 text-slate-200 text-sm rounded-xl px-3 py-1.5 focus:border-blue-500 outline-none transition"
-            >
-              <option value="">All Mailboxes ({mailboxes.reduce((acc, m) => acc + m.email_count, 0)})</option>
-              {mailboxes.map((mb) => (
-                <option key={mb.id} value={mb.id}>
-                  {mb.name} ({mb.address}) — {mb.email_count}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Quick Filters & Refresh */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setUnreadOnly(!unreadOnly);
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition ${
-                unreadOnly
-                  ? "bg-blue-600/20 border-blue-500 text-blue-400"
-                  : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
-              }`}
-            >
-              Unread Only
-            </button>
-            <button
-              onClick={() => {
-                setStarredOnly(!starredOnly);
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1 ${
-                starredOnly
-                  ? "bg-amber-500/20 border-amber-500 text-amber-400"
-                  : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
-              }`}
-            >
-              <Star className="w-3 h-3 fill-current" /> Starred
-            </button>
-            <button
-              onClick={() => loadEmails()}
-              title="Refresh Inbox"
-              className="p-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            </button>
-          </div>
-        </div>
-
-        {/* Search Input */}
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Search emails by sender, recipient, or subject..."
-            className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 outline-none transition"
-          />
-        </div>
-      </div>
-
-      {/* Main Content: Email List or Email Viewer */}
-      <div className="flex-1 overflow-hidden relative">
-        {/* Email Detail View Overlay / Screen */}
-        {selectedEmailId && (
-          <div className="absolute inset-0 bg-slate-950 z-20 flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="border-b border-slate-800 bg-slate-900/90 p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => {
-                    setSelectedEmailId(null);
-                    setEmailDetail(null);
-                  }}
-                  className="flex items-center gap-1.5 text-sm font-medium text-slate-400 hover:text-white bg-slate-800/80 px-3 py-1.5 rounded-lg transition"
-                >
-                  <ArrowLeft className="w-4 h-4" /> Back to Inbox
-                </button>
-                {emailDetail && (
-                  <button
-                    onClick={(e) => handleToggleStar(e, emailDetail.id, emailDetail.is_starred)}
-                    className="p-1.5 text-slate-400 hover:text-amber-400"
-                  >
-                    <Star
-                      className={`w-5 h-5 ${
-                        emailDetail.is_starred ? "text-amber-400 fill-amber-400" : ""
-                      }`}
-                    />
-                  </button>
-                )}
-              </div>
+    <div className="flex-1 flex flex-col h-full bg-slate-950 overflow-hidden">
+      {/* If an email is opened, show visually separated Email View */}
+      {selectedEmailId ? (
+        <div className="flex-1 flex flex-col h-full bg-slate-950 overflow-hidden">
+          {/* Email View Header Bar */}
+          <div className="h-12 border-b border-slate-800 bg-slate-900/60 px-4 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setSelectedEmailId(null);
+                  setEmailDetail(null);
+                }}
+                className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-white px-2.5 py-1 rounded-md hover:bg-slate-800 transition focus-visible:ring-1 focus-visible:ring-blue-500"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back</span>
+              </button>
 
               {emailDetail && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleDeleteEmail(emailDetail.id)}
-                    className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
-                    title="Delete Email"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                <button
+                  onClick={(e) => handleToggleStar(e, emailDetail.id, emailDetail.is_starred)}
+                  className="p-1.5 text-slate-400 hover:text-amber-400 rounded-md transition"
+                  title={emailDetail.is_starred ? "Unstar" : "Star"}
+                >
+                  <Star
+                    className={`w-4 h-4 ${
+                      emailDetail.is_starred ? "text-amber-400 fill-amber-400" : ""
+                    }`}
+                  />
+                </button>
               )}
             </div>
 
-            {/* Email Content Body */}
-            {detailLoading ? (
-              <div className="flex-1 flex items-center justify-center text-slate-400">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-sm">Loading email content...</span>
-                </div>
+            {emailDetail && (
+              <button
+                onClick={() => handleDeleteEmail(emailDetail.id)}
+                className="p-1.5 text-slate-400 hover:text-rose-400 rounded-md hover:bg-slate-800/80 transition"
+                title="Delete email"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Email Content Body */}
+          {detailLoading ? (
+            <div className="flex-1 flex items-center justify-center text-slate-500 text-xs">
+              <div className="flex items-center gap-2">
+                <div className="w-3.5 h-3.5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <span>Loading email...</span>
               </div>
-            ) : emailDetail ? (
-              <div className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-4xl mx-auto w-full space-y-6">
-                {/* Subject & Metadata */}
-                <div>
-                  <h1 className="text-xl sm:text-2xl font-bold text-white mb-4">
-                    {emailDetail.subject || "(No Subject)"}
-                  </h1>
+            </div>
+          ) : emailDetail ? (
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-4xl w-full mx-auto space-y-4">
+              {/* Subject */}
+              <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight break-words">
+                {emailDetail.subject || "(No Subject)"}
+              </h1>
 
-                  <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 sm:p-5 space-y-2 text-sm">
-                    <div className="flex items-baseline justify-between gap-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400 font-medium w-12 shrink-0">From:</span>
-                        <span className="text-slate-100 font-semibold">{emailDetail.sender}</span>
-                      </div>
-                      <span className="text-xs text-slate-500 whitespace-nowrap">
-                        {new Date(emailDetail.received_at).toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 font-medium w-12 shrink-0">To:</span>
-                      <span className="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs">
-                        {emailDetail.recipient}
-                      </span>
-                    </div>
-
-                    {emailDetail.cc && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400 font-medium w-12 shrink-0">CC:</span>
-                        <span className="text-slate-300 text-xs">{emailDetail.cc}</span>
-                      </div>
-                    )}
+              {/* Sender & Recipient Metadata */}
+              <div className="border border-slate-800 bg-slate-900/40 rounded-lg p-3 sm:p-4 text-xs space-y-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-slate-500 font-medium shrink-0">From:</span>
+                    <span className="text-slate-200 font-semibold truncate">{emailDetail.sender}</span>
                   </div>
+                  <span className="text-slate-500 shrink-0 whitespace-nowrap">
+                    {new Date(emailDetail.received_at).toLocaleString()}
+                  </span>
                 </div>
 
-                {/* View Tabs */}
-                {emailDetail.html_body && emailDetail.plain_text_body && (
-                  <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-                    <button
-                      onClick={() => setDetailTab("html")}
-                      className={`text-xs font-semibold px-3 py-1 rounded-lg transition ${
-                        detailTab === "html"
-                          ? "bg-blue-600 text-white"
-                          : "text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      Rich HTML
-                    </button>
-                    <button
-                      onClick={() => setDetailTab("text")}
-                      className={`text-xs font-semibold px-3 py-1 rounded-lg transition ${
-                        detailTab === "text"
-                          ? "bg-blue-600 text-white"
-                          : "text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      Plain Text
-                    </button>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-slate-500 font-medium shrink-0">To:</span>
+                  <span className="text-slate-300 font-mono truncate">{emailDetail.recipient}</span>
+                </div>
+
+                {emailDetail.cc && (
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-slate-500 font-medium shrink-0">CC:</span>
+                    <span className="text-slate-400 font-mono truncate">{emailDetail.cc}</span>
                   </div>
                 )}
+              </div>
 
-                {/* Rendered Body */}
-                <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 sm:p-6 min-h-[300px]">
-                  {detailTab === "html" && emailDetail.html_body ? (
-                    <div
-                      className="prose prose-invert max-w-none text-slate-200"
-                      dangerouslySetInnerHTML={{ __html: emailDetail.html_body }}
-                    />
-                  ) : (
-                    <pre className="whitespace-pre-wrap font-sans text-sm text-slate-200 leading-relaxed">
-                      {emailDetail.plain_text_body || emailDetail.html_body || "(No message body content)"}
-                    </pre>
-                  )}
+              {/* View Format Selector (if HTML exists) */}
+              {emailDetail.html_body && emailDetail.plain_text_body && (
+                <div className="flex items-center gap-1.5 border-b border-slate-800/80 pb-2">
+                  <button
+                    onClick={() => setDetailTab("html")}
+                    className={`text-xs px-2.5 py-1 rounded font-medium transition ${
+                      detailTab === "html"
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    HTML
+                  </button>
+                  <button
+                    onClick={() => setDetailTab("text")}
+                    className={`text-xs px-2.5 py-1 rounded font-medium transition ${
+                      detailTab === "text"
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    Plain Text
+                  </button>
                 </div>
+              )}
 
-                {/* Attachments Section */}
-                {emailDetail.attachments && emailDetail.attachments.length > 0 && (
-                  <div className="pt-4 border-t border-slate-800/80">
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <Paperclip className="w-3.5 h-3.5" /> Attachments ({emailDetail.attachments.length})
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {emailDetail.attachments.map((att) => (
-                        <div
-                          key={att.id}
-                          className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs"
+              {/* Email Content */}
+              <div className="border border-slate-800/80 bg-slate-900/30 rounded-lg p-4 sm:p-5 min-h-[220px]">
+                {detailTab === "html" && emailDetail.html_body ? (
+                  <div
+                    className="prose prose-invert max-w-none text-xs sm:text-sm text-slate-200 break-words"
+                    dangerouslySetInnerHTML={{ __html: emailDetail.html_body }}
+                  />
+                ) : (
+                  <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm text-slate-200 leading-relaxed break-words">
+                    {emailDetail.plain_text_body || emailDetail.html_body || "(No message body)"}
+                  </pre>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        /* Inbox List Mode */
+        <div className="flex-1 flex flex-col h-full overflow-hidden">
+          {/* Compact Toolbar */}
+          <div className="border-b border-slate-800/80 bg-slate-900/40 p-2.5 sm:px-4 space-y-2 shrink-0">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              {/* Compact Mailbox Selector */}
+              <div className="relative">
+                <button
+                  onClick={() => setMailboxDropdownOpen(!mailboxDropdownOpen)}
+                  className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-200 text-xs font-medium px-2.5 py-1.5 rounded-md transition focus-visible:ring-1 focus-visible:ring-blue-500 outline-none"
+                  aria-haspopup="listbox"
+                  aria-expanded={mailboxDropdownOpen}
+                >
+                  <span className="truncate max-w-[180px] sm:max-w-[220px]">
+                    {currentMailboxLabel}
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                </button>
+
+                {/* Compact Dropdown Menu */}
+                {mailboxDropdownOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-30"
+                      onClick={() => setMailboxDropdownOpen(false)}
+                    />
+                    <div className="absolute left-0 mt-1 z-40 w-64 bg-slate-900 border border-slate-800 rounded-lg shadow-xl py-1 text-xs text-slate-200">
+                      <button
+                        onClick={() => {
+                          setSelectedMailboxId("");
+                          setPage(1);
+                          setMailboxDropdownOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-800 transition ${
+                          selectedMailboxId === "" ? "text-blue-400 font-semibold" : ""
+                        }`}
+                      >
+                        <span>All Mailboxes</span>
+                        {selectedMailboxId === "" && <Check className="w-3.5 h-3.5" />}
+                      </button>
+
+                      <div className="border-t border-slate-800/80 my-1" />
+
+                      {mailboxes.map((mb) => (
+                        <button
+                          key={mb.id}
+                          onClick={() => {
+                            setSelectedMailboxId(mb.id);
+                            setPage(1);
+                            setMailboxDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-800 transition truncate ${
+                            selectedMailboxId === mb.id ? "text-blue-400 font-semibold" : ""
+                          }`}
                         >
-                          <span className="font-medium text-slate-200 truncate">{att.filename}</span>
-                          <span className="text-slate-500 shrink-0 ml-2">
-                            {(att.size_bytes / 1024).toFixed(1)} KB
-                          </span>
-                        </div>
+                          <span className="truncate">{mb.address}</span>
+                          {selectedMailboxId === mb.id && <Check className="w-3.5 h-3.5 shrink-0 ml-1" />}
+                        </button>
                       ))}
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
-            ) : null}
-          </div>
-        )}
 
-        {/* Email List View */}
-        <div className="h-full overflow-y-auto">
-          {loading && emails.length === 0 ? (
-            <div className="p-12 text-center text-slate-500 text-sm">Loading emails...</div>
-          ) : emails.length === 0 ? (
-            <div className="p-16 text-center text-slate-500">
-              <InboxIcon className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-              <p className="text-base font-medium text-slate-400">No emails found</p>
-              <p className="text-xs text-slate-500 mt-1">
-                Incoming emails sent to your mailboxes will appear here automatically.
-              </p>
+              {/* Quick Filters & Refresh */}
+              <div className="flex items-center gap-1.5 ml-auto">
+                <button
+                  onClick={() => {
+                    setUnreadOnly(!unreadOnly);
+                    setPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded text-xs font-medium border transition ${
+                    unreadOnly
+                      ? "bg-blue-600/20 border-blue-500 text-blue-400"
+                      : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Unread
+                </button>
+                <button
+                  onClick={() => {
+                    setStarredOnly(!starredOnly);
+                    setPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded text-xs font-medium border transition flex items-center gap-1 ${
+                    starredOnly
+                      ? "bg-amber-500/20 border-amber-500 text-amber-400"
+                      : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Star className="w-3 h-3 fill-current" />
+                  <span>Starred</span>
+                </button>
+                <button
+                  onClick={() => loadEmails()}
+                  aria-label="Refresh Inbox"
+                  className="p-1.5 bg-slate-900 border border-slate-800 rounded text-slate-400 hover:text-white transition focus-visible:ring-1 focus-visible:ring-blue-500"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                </button>
+              </div>
             </div>
-          ) : (
-            <div className="divide-y divide-slate-800/60">
-              {emails.map((email) => {
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search inbox..."
+                className="w-full bg-slate-950 border border-slate-800 focus:border-slate-700 rounded-md pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition"
+              />
+            </div>
+          </div>
+
+          {/* Email List - Compact Rows */}
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
+            {loading && emails.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-xs">Loading emails...</div>
+            ) : emails.length === 0 ? (
+              <div className="p-12 text-center text-slate-500">
+                <InboxIcon className="w-8 h-8 mx-auto mb-2 text-slate-600 stroke-[1.5]" />
+                <p className="text-xs font-medium text-slate-400">No emails</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Incoming mail will show up here automatically.
+                </p>
+              </div>
+            ) : (
+              emails.map((email) => {
                 const isUnread = !email.is_read;
+                const senderName = cleanSenderName(email.sender);
+                const previewSnippet = email.preview || "";
+
                 return (
                   <div
                     key={email.id}
                     onClick={() => handleOpenEmail(email.id)}
-                    className={`flex items-start sm:items-center gap-3 px-4 py-3.5 cursor-pointer transition hover:bg-slate-900/60 ${
-                      isUnread ? "bg-slate-900/30" : "opacity-80 hover:opacity-100"
+                    className={`flex items-center gap-2.5 px-3 sm:px-4 py-2.5 cursor-pointer transition hover:bg-slate-900/60 select-none ${
+                      isUnread ? "bg-slate-900/30 font-medium" : "opacity-75 hover:opacity-100"
                     }`}
                   >
-                    {/* Star & Read Indicator */}
-                    <div className="flex items-center gap-1.5 shrink-0 mt-0.5 sm:mt-0">
-                      <button
-                        onClick={(e) => handleToggleStar(e, email.id, email.is_starred)}
-                        className="p-1 text-slate-500 hover:text-amber-400 transition"
-                      >
-                        <Star
-                          className={`w-4 h-4 ${
-                            email.is_starred ? "text-amber-400 fill-amber-400" : ""
-                          }`}
-                        />
-                      </button>
-                      <button
-                        onClick={(e) => handleToggleRead(e, email.id, email.is_read)}
-                        className="p-1 text-slate-500 hover:text-blue-400 transition"
-                      >
-                        {isUnread ? (
-                          <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500" />
-                        ) : (
-                          <div className="w-2.5 h-2.5 rounded-full border border-slate-700" />
-                        )}
-                      </button>
+                    {/* Unread dot */}
+                    <div className="w-1.5 h-1.5 rounded-full shrink-0">
+                      {isUnread && <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
                     </div>
 
-                    {/* Sender & Recipient badge */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                        <span
-                          className={`text-sm truncate ${
-                            isUnread ? "font-bold text-white" : "font-normal text-slate-300"
-                          }`}
-                        >
-                          {email.sender}
-                        </span>
-                        <span className="text-xs text-slate-500 shrink-0 whitespace-nowrap">
-                          {formatDate(email.received_at)}
-                        </span>
-                      </div>
+                    {/* Star icon */}
+                    <button
+                      onClick={(e) => handleToggleStar(e, email.id, email.is_starred)}
+                      className="p-0.5 text-slate-600 hover:text-amber-400 shrink-0 transition"
+                      aria-label={email.is_starred ? "Unstar email" : "Star email"}
+                    >
+                      <Star
+                        className={`w-3.5 h-3.5 ${
+                          email.is_starred ? "text-amber-400 fill-amber-400" : ""
+                        }`}
+                      />
+                    </button>
 
-                      <div className="flex items-center gap-2">
-                        <p
-                          className={`text-xs truncate ${
-                            isUnread ? "text-slate-200 font-semibold" : "text-slate-400"
-                          }`}
-                        >
-                          {email.subject || "(No Subject)"}
-                        </p>
-                      </div>
+                    {/* Sender column (Fixed/max width for easy scan) */}
+                    <span
+                      className={`text-xs truncate w-28 sm:w-44 shrink-0 ${
+                        isUnread ? "text-white font-semibold" : "text-slate-300"
+                      }`}
+                    >
+                      {senderName}
+                    </span>
 
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] font-mono bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded">
-                          To: {email.mailbox_address}
+                    {/* Subject + Short Preview on same line */}
+                    <div className="flex-1 min-w-0 flex items-baseline gap-1.5 text-xs truncate">
+                      <span className={`truncate ${isUnread ? "text-slate-100 font-semibold" : "text-slate-300"}`}>
+                        {email.subject || "(No Subject)"}
+                      </span>
+                      {previewSnippet && (
+                        <span className="hidden sm:inline text-slate-500 truncate font-normal">
+                          — {previewSnippet}
                         </span>
-                        {email.has_attachments && (
-                          <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
-                            <Paperclip className="w-2.5 h-2.5" /> Attachment
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </div>
+
+                    {/* Received Time (Right-aligned, compact) */}
+                    <span className="text-[11px] text-slate-500 shrink-0 whitespace-nowrap ml-1">
+                      {formatReceivedDate(email.received_at)}
+                    </span>
                   </div>
                 );
-              })}
+              })
+            )}
+          </div>
+
+          {/* Compact Pagination Bar */}
+          {totalPages > 1 && (
+            <div className="h-10 border-t border-slate-800 bg-slate-900/40 px-3 flex items-center justify-between text-xs text-slate-500 shrink-0">
+              <span>
+                Page {page} of {totalPages} ({total} emails)
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="p-1 rounded hover:bg-slate-800 disabled:opacity-30 transition"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="p-1 rounded hover:bg-slate-800 disabled:opacity-30 transition"
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Pagination Footer */}
-      {totalPages > 1 && (
-        <div className="border-t border-slate-800/80 bg-slate-900/60 px-4 py-3 flex items-center justify-between text-xs text-slate-400">
-          <span>
-            Page <b className="text-slate-200">{page}</b> of <b className="text-slate-200">{totalPages}</b> ({total} emails)
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 disabled:opacity-40 transition"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="p-1.5 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 disabled:opacity-40 transition"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
         </div>
       )}
     </div>

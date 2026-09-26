@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Settings, User, Mail, Shield, LogOut, CheckCircle2, Copy, Check } from "lucide-react";
+import { Settings, User, Shield, LogOut, Copy, Check } from "lucide-react";
 import { api } from "@/lib/api";
 import { User as UserType } from "@/types";
 import { useRouter } from "next/navigation";
@@ -33,8 +33,8 @@ export default function SettingsPage() {
 
   const workerWebhookUrl =
     typeof window !== "undefined"
-      ? `${window.location.protocol}//${window.location.hostname}:8000/api/internal/email/incoming`
-      : "https://your-api.com/api/internal/email/incoming";
+      ? `${window.location.origin}/api/internal/email/incoming`
+      : "/api/internal/email/incoming";
 
   function copyWebhook() {
     navigator.clipboard.writeText(workerWebhookUrl);
@@ -43,100 +43,89 @@ export default function SettingsPage() {
   }
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-500 text-sm">Loading settings...</div>;
+    return <div className="p-8 text-center text-slate-500 text-xs">Loading settings...</div>;
   }
 
   return (
-    <div className="flex-1 p-4 sm:p-8 max-w-4xl mx-auto w-full space-y-6">
+    <div className="flex-1 p-4 sm:p-6 max-w-3xl mx-auto w-full space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-          <Settings className="w-6 h-6 text-blue-500" /> Account & System Settings
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Review your account profile and Cloudflare Worker integration parameters.
+        <h1 className="text-lg font-bold text-white tracking-tight">Settings</h1>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Account information and Cloudflare Worker webhook parameters.
         </p>
       </div>
 
       {/* User Profile Card */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-4">
-        <h2 className="text-base font-semibold text-white flex items-center gap-2">
-          <User className="w-4 h-4 text-blue-400" /> User Profile
+      <div className="border border-slate-800 bg-slate-900/40 rounded-lg p-4 space-y-3">
+        <h2 className="text-xs font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+          <User className="w-3.5 h-3.5 text-blue-400" />
+          <span>Profile</span>
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-          <div className="p-4 bg-slate-950/70 border border-slate-800/80 rounded-xl">
-            <span className="text-xs text-slate-400 font-medium block mb-1">Full Name</span>
-            <span className="text-slate-100 font-semibold">{user?.name}</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+          <div className="p-2.5 bg-slate-950 border border-slate-800/80 rounded">
+            <span className="text-[11px] text-slate-500 block mb-0.5">Name</span>
+            <span className="text-slate-100 font-medium truncate block">{user?.name}</span>
           </div>
 
-          <div className="p-4 bg-slate-950/70 border border-slate-800/80 rounded-xl">
-            <span className="text-xs text-slate-400 font-medium block mb-1">Login Email</span>
-            <span className="text-slate-100 font-semibold">{user?.email}</span>
+          <div className="p-2.5 bg-slate-950 border border-slate-800/80 rounded">
+            <span className="text-[11px] text-slate-500 block mb-0.5">Login Email</span>
+            <span className="text-slate-100 font-medium truncate block">{user?.email}</span>
           </div>
 
-          <div className="p-4 bg-slate-950/70 border border-slate-800/80 rounded-xl">
-            <span className="text-xs text-slate-400 font-medium block mb-1">User ID</span>
-            <span className="text-slate-400 font-mono text-xs truncate block">{user?.id}</span>
+          <div className="p-2.5 bg-slate-950 border border-slate-800/80 rounded">
+            <span className="text-[11px] text-slate-500 block mb-0.5">User ID</span>
+            <span className="text-slate-400 font-mono text-[11px] truncate block">{user?.id}</span>
           </div>
 
-          <div className="p-4 bg-slate-950/70 border border-slate-800/80 rounded-xl">
-            <span className="text-xs text-slate-400 font-medium block mb-1">Member Since</span>
-            <span className="text-slate-100">
+          <div className="p-2.5 bg-slate-950 border border-slate-800/80 rounded">
+            <span className="text-[11px] text-slate-500 block mb-0.5">Member Since</span>
+            <span className="text-slate-200">
               {user?.created_at ? new Date(user.created_at).toLocaleDateString() : "—"}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Worker Integration Card */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-4">
-        <h2 className="text-base font-semibold text-white flex items-center gap-2">
-          <Shield className="w-4 h-4 text-purple-400" /> Cloudflare Email Worker Integration
+      {/* Cloudflare Worker Webhook Card */}
+      <div className="border border-slate-800 bg-slate-900/40 rounded-lg p-4 space-y-3">
+        <h2 className="text-xs font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+          <Shield className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Cloudflare Worker Webhook</span>
         </h2>
         <p className="text-xs text-slate-400 leading-relaxed">
-          Your Cloudflare Email Worker forwards raw RFC822 MIME streams to the backend. The backend matches the recipient to your mailboxes automatically.
+          Configure your Cloudflare Email Worker to forward raw RFC822 MIME emails to this endpoint:
         </p>
 
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider block">
-            Internal Worker Webhook URL:
-          </label>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              readOnly
-              value={workerWebhookUrl}
-              className="flex-1 bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 px-3.5 py-2.5 rounded-xl outline-none"
-            />
-            <button
-              onClick={copyWebhook}
-              className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition"
-              title="Copy Webhook URL"
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-
-        <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 flex items-start gap-2.5">
-          <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-          <span>
-            The Cloudflare Email Worker sends <code className="bg-blue-900/50 px-1 py-0.5 rounded">message.raw</code> with headers <code className="bg-blue-900/50 px-1 py-0.5 rounded">X-Email-From</code> and <code className="bg-blue-900/50 px-1 py-0.5 rounded">X-Email-To</code>.
-          </span>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            readOnly
+            value={workerWebhookUrl}
+            className="flex-1 bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 px-3 py-1.5 rounded outline-none"
+          />
+          <button
+            onClick={copyWebhook}
+            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition shrink-0"
+            title="Copy Webhook URL"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
         </div>
       </div>
 
       {/* Sign Out Card */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 flex items-center justify-between">
+      <div className="border border-slate-800 bg-slate-900/40 rounded-lg p-4 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-white">Sign Out</h2>
-          <p className="text-xs text-slate-400 mt-0.5">End your active session on this device.</p>
+          <h2 className="text-xs font-semibold text-slate-200">Session</h2>
+          <p className="text-xs text-slate-500 mt-0.5">Log out from your account on this device.</p>
         </div>
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-400 text-xs font-medium px-4 py-2.5 rounded-xl transition"
+          className="flex items-center gap-1.5 bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 text-rose-400 text-xs font-medium px-3 py-1.5 rounded transition"
         >
-          <LogOut className="w-4 h-4" /> Sign Out
+          <LogOut className="w-3.5 h-3.5" />
+          <span>Sign Out</span>
         </button>
       </div>
     </div>

@@ -77,6 +77,7 @@ class EmailRepository:
                 Email.is_read,
                 Email.is_starred,
                 Email.size_bytes,
+                func.substring(func.coalesce(Email.plain_text_body, ""), 1, 90).label("preview"),
                 func.count(EmailAttachment.id).label("attachment_count"),
             )
             .join(Mailbox, Email.mailbox_id == Mailbox.id)
@@ -103,6 +104,7 @@ class EmailRepository:
                 "is_starred": r.is_starred,
                 "size_bytes": r.size_bytes,
                 "has_attachments": (r.attachment_count or 0) > 0,
+                "preview": r.preview or "",
             }
             for r in rows
         ]

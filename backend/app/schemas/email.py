@@ -25,6 +25,7 @@ class EmailSummaryResponse(BaseModel):
     is_starred: bool
     size_bytes: int
     has_attachments: bool
+    preview: Optional[str] = None
 
     class Config:
         from_attributes = True
